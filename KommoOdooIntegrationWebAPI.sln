@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36301.6 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KommoOdooIntegrationWebAPI", "KommoOdooIntegrationWebAPI\KommoOdooIntegrationWebAPI.csproj", "{AB3F492D-377A-4D51-84FB-F46AFE760E99}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{AB3F492D-377A-4D51-84FB-F46AFE760E99}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AB3F492D-377A-4D51-84FB-F46AFE760E99}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AB3F492D-377A-4D51-84FB-F46AFE760E99}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AB3F492D-377A-4D51-84FB-F46AFE760E99}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {6BEE374F-C10D-474C-907C-03DCEB93234F}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,6 @@
+@KommoOdooIntegrationWebAPI_HostAddress = http://localhost:5203
+
+GET {{KommoOdooIntegrationWebAPI_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
