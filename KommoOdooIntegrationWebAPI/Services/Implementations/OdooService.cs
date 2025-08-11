@@ -11,6 +11,7 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
         private readonly HttpClient _httpClient;
         private readonly OdooConfiguration _odooConfiguration;
         private int _uid;
+
         public OdooService(HttpClient httpClient, IOptions<OdooConfiguration> odooConfiguration)
         {
             _httpClient = httpClient;
@@ -26,8 +27,14 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
                 @params = new
                 {
                     service = "common",
-                    method = "login",
-                    args = new object[] { _odooConfiguration.Db, _odooConfiguration.Username, _odooConfiguration.Password }
+                    method = "authenticate",
+                    args = new object[]
+                    {
+                        _odooConfiguration.Db,
+                        _odooConfiguration.Username,
+                        _odooConfiguration.Password,
+                        new { }
+                    }
                 },
                 id = 1
             };
@@ -37,9 +44,11 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
             return _uid;
         }
 
-        public async Task<JsonElement> SearchReadAsync(string model, object domain, object fields)
+        public async Task<JsonElement> SearchReadAsync(string model, object[][] domain, string[] fields)
         {
-            var uid = await AuthenticateAsync();
+            if (_uid == 0)
+                await AuthenticateAsync();
+
             var request = new
             {
                 jsonrpc = "2.0",
@@ -49,16 +58,50 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
                     service = "object",
                     method = "execute_kw",
                     args = new object[]
-                {
-                    _odooConfiguration.Db, _uid=uid, _odooConfiguration.Password,
-                    model, "search_read",
-                    domain,
-                    new { fields }
-                }
+                    {
+                        _odooConfiguration.Db,
+                        _uid,
+                        _odooConfiguration.Password,
+                        model,
+                        "search_read",
+                        new object[] { domain },
+                        new { fields }
+                    }
                 },
                 id = 2
             };
+
             return await SendRequestAsync(request);
+        }
+
+        public async Task<int> CreateAsync(string model, object values)
+        {
+            if (_uid == 0)
+                await AuthenticateAsync();
+
+            var request = new
+            {
+                jsonrpc = "2.0",
+                method = "call",
+                @params = new
+                {
+                    service = "object",
+                    method = "execute_kw",
+                    args = new object[]
+                    {
+                        _odooConfiguration.Db,
+                        _uid,
+                        _odooConfiguration.Password,
+                        model,
+                        "create",
+                        new object[] { values }
+                    }
+                },
+                id = 3
+            };
+
+            var response = await SendRequestAsync(request);
+            return response.GetProperty("result").GetInt32();
         }
 
         private async Task<JsonElement> SendRequestAsync(object payload)
@@ -68,9 +111,9 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
 
             var response = await _httpClient.PostAsync("https://pixelzone.odoo.com/jsonrpc", content);
             response.EnsureSuccessStatusCode();
-            
+
             var body = await response.Content.ReadAsStringAsync();
             return JsonSerializer.Deserialize<JsonElement>(body);
-        }
+        } 
     }
 }

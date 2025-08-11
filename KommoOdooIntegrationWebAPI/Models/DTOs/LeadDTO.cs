@@ -2,35 +2,44 @@
 {
     public class LeadDTO
     {
-        public long Id { get; set; }
         public string Name { get; set; }
-        public decimal? Price { get; set; }
-        public int StatusId { get; set; }
-        public int PipelineId { get; set; }
-        public int ResponsibleUserId { get; set; }
-        public long CreatedAt { get; set; }
-        public long UpdatedAt { get; set; }
-        public List<CustomFieldValue> CustomFieldsValues { get; set; }
-        public List<ContactDto> Contacts { get; set; }
+        public EmbeddedContacts _embedded { get; set; }
     }
 
     public class CustomFieldValue
     {
-        public int FieldId { get; set; }
-        public List<CustomFieldItem> Values { get; set; }
+        public string Field_code { get; set; } 
+        public Value[] Values { get; set; }
     }
 
     public class CustomFieldItem
     {
-        public string Value { get; set; }
+        public Value Value { get; set; }
     }
 
-    public class ContactDto
+    public class ContactDTO
     {
-        public long Id { get; set; }
-        public string FullName { get; set; }
-        public string Phone { get; set; }
-        public string Email { get; set; }
+        public string Name { get; set; }
+        public string First_name { get; set; }
+        public string Last_name { get; set; }
+        public CustomFieldValue[] Custom_fields_values { get; set; }
+    }
+
+    public class EmbeddedContacts
+    {
+        public ContactDTO[] Contacts { get; set; }
+    }
+
+    public class Value
+    {
+        public string value { get; set; }
+    }
+
+    public class OdooLeadDTO
+    {
+        public string model { get; set; } 
+        public object[][] domain { get; set; }
+        public string[] fields { get; set; }
     }
 
 }

@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using KommoOdooIntegrationWebAPI.Models.DTOs;
 using KommoOdooIntegrationWebAPI.Services.Interfaces;
@@ -13,28 +14,42 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
         {
             _httpClient = httpClient;
             _httpClient.BaseAddress = new Uri("https://memizademinur.kommo.com/api/v4/");
-            _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImp0aSI6IjViZmYxNWZhOWM0MThlYjQ1YjVmODNlNThiMmE5YTNlOGVjMzdhYzNmODVlYjNmODdkNzZmMjUxMWIwMjgyNjhlODZjMjY4ZTdhODJiZTRjIn0.eyJhdWQiOiJlODg2ZGRlOS02NjJjLTRjM2QtOTBjNy04Y2VlNDM4N2I0NjUiLCJqdGkiOiI1YmZmMTVmYTljNDE4ZWI0NWI1ZjgzZTU4YjJhOWEzZThlYzM3YWMzZjg1ZWIzZjg3ZDc2ZjI1MTFiMDI4MjY4ZTg2YzI2OGU3YTgyYmU0YyIsImlhdCI6MTc1NDY1MjQ5OCwibmJmIjoxNzU0NjUyNDk4LCJleHAiOjE3NTY2ODQ4MDAsInN1YiI6IjEzNjQ0MDMyIiwiZ3JhbnRfdHlwZSI6IiIsImFjY291bnRfaWQiOjM0OTk3MTU2LCJiYXNlX2RvbWFpbiI6ImtvbW1vLmNvbSIsInZlcnNpb24iOjIsInNjb3BlcyI6WyJjcm0iLCJmaWxlcyIsImZpbGVzX2RlbGV0ZSIsIm5vdGlmaWNhdGlvbnMiLCJwdXNoX25vdGlmaWNhdGlvbnMiXSwidXNlcl9mbGFncyI6MCwiaGFzaF91dWlkIjoiMTVmY2Y4ZWUtZWZmZC00MmNiLTlhNDgtNzFjMzE1YmE1ODFlIiwiYXBpX2RvbWFpbiI6ImFwaS1jLmtvbW1vLmNvbSJ9.b-2C4-AamkEW08N7gE_73kkl5f_PqXYVG0zlzni2YEPr8I-Foaqcczcere72asR95Hj2Cq3iGHVKEbkuMu-YdWcAs1o4DFd20APfBfcQSSO91_dUTe11DqfEa6a-9m2HbcfRkvq2RhlhGoR7cK8d5M6wiLXpnWwx0D4rYgNLZDBLrk8fjcaPZW6ejNaiowrdWzfvau1N8A-1wJwdy2QYSNAxufLiYNViUPdQTGS8oRnweuByJMnaFQ28veo8ve1CsdsXne08pguJ20CWG86Vy0kN2LMuM7D_XqrRPhB1B0-qGVioB0P881rTOLW2qP2gOxm7jbIPE5BkxQ2d-Tg43A");
+            _httpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImp0aSI6IjA4YzU1ODhhMjNkM2NkZjA1M2I4ZmU2NzUyMzFlYjdhNjU3NzliNGE3NTEyNTk5NDM5MmQxODYxYmMxMDJjNTVjYzM0NDJlMjg2YzM5Y2M1In0.eyJhdWQiOiJlODg2ZGRlOS02NjJjLTRjM2QtOTBjNy04Y2VlNDM4N2I0NjUiLCJqdGkiOiIwOGM1NTg4YTIzZDNjZGYwNTNiOGZlNjc1MjMxZWI3YTY1Nzc5YjRhNzUxMjU5OTQzOTJkMTg2MWJjMTAyYzU1Y2MzNDQyZTI4NmMzOWNjNSIsImlhdCI6MTc1NDgyNDA0NiwibmJmIjoxNzU0ODI0MDQ2LCJleHAiOjE3NTY2ODQ4MDAsInN1YiI6IjEzNjQ0MDMyIiwiZ3JhbnRfdHlwZSI6IiIsImFjY291bnRfaWQiOjM0OTk3MTU2LCJiYXNlX2RvbWFpbiI6ImtvbW1vLmNvbSIsInZlcnNpb24iOjIsInNjb3BlcyI6WyJjcm0iLCJmaWxlcyIsImZpbGVzX2RlbGV0ZSIsIm5vdGlmaWNhdGlvbnMiLCJwdXNoX25vdGlmaWNhdGlvbnMiXSwidXNlcl9mbGFncyI6MCwiaGFzaF91dWlkIjoiYzYxM2RkMjQtZDQ2Ni00NDdmLTk5MTYtMmVjMmExMmY2NGVlIiwiYXBpX2RvbWFpbiI6ImFwaS1jLmtvbW1vLmNvbSJ9.JfBysuxyMbBEvSYWOSUojuUlAysjer5Y5JeiiDBbq5K-ZWa8EMXigoCBnsf0ehU5VoAmkWte8AbdYSKP-3UTH6bXJqHkGQ9tu_TtJgZ82a0ObVGOl_LEXIPhqvlha1LpPpSBig_TXPCsI0nQyP17SiAACJHuh_v9Vaq5tces_NtamiNaDKyJfru4wMusUdlEi5yERFpLmLSIzhCuS_6bt1H3FbsXWLH6CyeSe7NVxzN7bpmZyGyXLB4sKmd5gazDiBqjJHqJgw-IHqJ3IfH_p6VoE28K06tFTodWsRi7t1k8zMun6gJoGihAPwhpdXODF8PIKQZX0a3qvkJKTwoD4w");
         }
 
-        public async Task<string> CreateLeadAsync(LeadDTO leadDTO)
+        private async Task<string> PostAsync(string endpoint, object payload)
         {
-            var json = JsonSerializer.Serialize(new[] {leadDTO});
+            var json = JsonSerializer.Serialize(payload);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
-            var response = await _httpClient.PostAsync("leads", content);
+
+            var response = await _httpClient.PostAsync(endpoint, content);
+            response.EnsureSuccessStatusCode();
+
+            return await response.Content.ReadAsStringAsync();
+        }
+
+        private async Task<string> GetAsync(string endpoint)
+        {
+            var response = await _httpClient.GetAsync(endpoint);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync();
         }
 
-        public async Task<string> GetLeadsAsync()
-        {
-            var response = await _httpClient.GetAsync("leads");
-            response.EnsureSuccessStatusCode();
 
-            var content = await response.Content.ReadAsStringAsync();
-            Console.WriteLine("Response content:");
-            Console.WriteLine(content);
+        public Task<string> CreateLeadAsync(LeadDTO leadDTO)
+            => PostAsync("leads", new[] { leadDTO });
 
-            return content;
-        }
+        public Task<string> CreateContactAsync(ContactDTO contactDTO)
+            => PostAsync("contacts", new[] { contactDTO });
+
+        public Task<string> GetLeadsAsync()
+            => GetAsync("leads");
+
+        public Task<string> GetContactsAsync()
+            => GetAsync("contacts");
+
+        public Task<string> GetContactByIdAsync(long contactId)
+            => GetAsync($"contacts/{contactId}");
     }
 }
