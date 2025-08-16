@@ -17,7 +17,6 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
 
         public async Task KommoToOdooIntegrationAsync()
         {
-            // 1️⃣ Kommo-dan lead-ləri çəkirik
             var json = await _kommoService.GetLeadsAsync("contacts,companies");
             using var doc = JsonDocument.Parse(json);
 
@@ -41,7 +40,6 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
                 string contactEmail = null;
                 string contactPhone = null;
 
-                // 2️⃣ Əgər lead-in contact-ları varsa, hər contact üçün məlumatları ayrıca al
                 if (lead.TryGetProperty("_embedded", out var leadEmbedded) &&
                     leadEmbedded.TryGetProperty("contacts", out var contactsArray) &&
                     contactsArray.ValueKind == JsonValueKind.Array)
@@ -52,7 +50,6 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
                         {
                             long contactId = contactIdProp.GetInt64();
 
-                            // Contact-un tam məlumatını al
                             var contactJson = await _kommoService.GetContactByIdAsync(contactId);
                             using var contactDoc = JsonDocument.Parse(contactJson);
                             var contactRoot = contactDoc.RootElement;
@@ -81,7 +78,6 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
                     }
                 }
 
-                // 3️⃣ Əgər varsa şirkət məlumatı
                 if (leadEmbedded.TryGetProperty("companies", out var companiesArray) &&
                     companiesArray.ValueKind == JsonValueKind.Array &&
                     companiesArray.GetArrayLength() > 0)
@@ -89,14 +85,12 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
                     var company = companiesArray[0];
                     companyName = company.TryGetProperty("name", out var cName) ? cName.GetString() : null;
 
-                    // Əgər contact email/phone boşdursa, şirkətdən götür
                     if (string.IsNullOrWhiteSpace(contactEmail))
                         contactEmail = company.TryGetProperty("email", out var cEmail) ? cEmail.GetString() : null;
                     if (string.IsNullOrWhiteSpace(contactPhone))
                         contactPhone = company.TryGetProperty("phone", out var cPhone) ? cPhone.GetString() : null;
                 }
 
-                // 4️⃣ Odoo-da contact yarat
                 var contactIdOdoo = await _odooService.CreateAsync("res.partner", new
                 {
                     name = contactName ?? leadName,
@@ -106,7 +100,6 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
                 });
                 int contactIdInt = Convert.ToInt32(contactIdOdoo);
 
-                // 5️⃣ Odoo-da lead yarat və contact-a bağla
                 await _odooService.CreateAsync("crm.lead", new
                 {
                     name = leadName,
@@ -120,45 +113,103 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
 
         public async Task OdooToKommoIntegrationAsync()
         {
-            // Odoo-dan sadəcə leadin adını çəkmək
-            var fields = new string[] { "name" };
+            int urlFieldId = 1457056;
+
+            var existingLeadsJson = await _kommoService.GetAsync("/api/v4/leads");
+            var existingLeadLinks = new HashSet<string>();
+
+            if (existingLeadsJson == null)
+            {
+                using (var doc = JsonDocument.Parse(existingLeadsJson))
+                {
+                    if (doc.RootElement.TryGetProperty("_embedded", out var embedded) &&
+                        embedded.TryGetProperty("leads", out var leadsArray))
+                    {
+                        foreach (var lead in leadsArray.EnumerateArray())
+                        {
+                            if (lead.TryGetProperty("custom_fields_values", out var customFields))
+                            {
+                                foreach (var field in customFields.EnumerateArray())
+                                {
+                                    if (field.TryGetProperty("field_id", out var fieldIdProp) && fieldIdProp.GetInt32() == urlFieldId &&
+                                        field.TryGetProperty("values", out var valuesArray))
+                                    {
+                                        foreach (var val in valuesArray.EnumerateArray())
+                                        {
+                                            if (val.TryGetProperty("value", out var linkProp))
+                                                existingLeadLinks.Add(linkProp.GetString());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            var fields = new string[] { "id", "name" };
             var jsonResult = await _odooService.SearchReadAsync("crm.lead", new object[][] { }, fields);
 
             int createdCount = 0;
 
             foreach (var item in jsonResult.GetProperty("result").EnumerateArray())
             {
-                var leadName = item.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String
-                    ? name.GetString()
+                var leadId = item.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.Number
+                    ? idProp.GetInt32()
+                    : 0;
+                if (leadId == 0) continue;
+
+                string odooLink = $"https://pixelzone.odoo.com/web#id={leadId}&model=crm.lead";
+
+                if (existingLeadLinks.Contains(odooLink)) continue;
+
+                string leadName = item.TryGetProperty("name", out var nameProp) && nameProp.ValueKind == JsonValueKind.String
+                    ? nameProp.GetString()
                     : "NoName";
 
-                // Kommo-da lead yaratmaq üçün minimal payload
                 var leadPayload = new[]
                 {
-            new
-            {
-                name = leadName,
-                _embedded = new { } // boş _embedded sahəsi tələb olunur
-            }
-        };
+                    new
+                    {
+                        name = leadName,
+                        custom_fields_values = new[]
+                        {
+                            new
+                            {
+                                field_id = urlFieldId,
+                                values = new[] { new { value = odooLink } }
+                            }
+                        }
+                    }
+                };
 
-                // POST request
-                var leadJsonString = await _kommoService.PostAsync("/api/v4/leads", leadPayload);
-
-                var leadJson = JsonDocument.Parse(leadJsonString);
-                if (leadJson.RootElement.TryGetProperty("id", out var leadId))
+                try
                 {
-                    createdCount++;
-                    Console.WriteLine($"Lead yaradıldı: {leadId.GetInt32()}");
+                    var leadJsonString = await _kommoService.PostAsync("/api/v4/leads", leadPayload);
+                    var leadJson = JsonDocument.Parse(leadJsonString);
+                    if (leadJson.RootElement.TryGetProperty("_embedded", out var embeddedResp) &&
+                        embeddedResp.TryGetProperty("leads", out var leadsRespArray) &&
+                        leadsRespArray.GetArrayLength() > 0 &&
+                        leadsRespArray[0].TryGetProperty("id", out var createdLeadId))
+                    {
+                        createdCount++;
+                        Console.WriteLine($"Lead yaradıldı: {createdLeadId.GetInt32()} (Odoo link: {odooLink})");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Lead yaradıla bilmədi: {leadJsonString}");
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    Console.WriteLine($"Lead yaradıla bilmədi: {leadJsonString}");
+                    Console.WriteLine($"Xəta lead üçün {odooLink}: {ex.Message}");
                 }
             }
 
             Console.WriteLine($"Bütün Odoo leadləri Kommo-da yaradıldı. Uğurla yaradılan lead sayı: {createdCount}");
         }
+
+
 
 
     }
