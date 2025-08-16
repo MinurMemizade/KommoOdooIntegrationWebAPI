@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using KommoOdooIntegrationWebAPI.Models.DTOs;
 
 namespace KommoOdooIntegrationWebAPI.Services.Interfaces
 {
@@ -7,6 +8,6 @@ namespace KommoOdooIntegrationWebAPI.Services.Interfaces
         Task<int> AuthenticateAsync();
         Task<JsonElement> SearchReadAsync(string model, object[][] domain, string[] fields);
         Task<int> CreateAsync(string model, object values);
+        Task<bool> UpdateAsync(string model, int id, object values);
     }
-
 }

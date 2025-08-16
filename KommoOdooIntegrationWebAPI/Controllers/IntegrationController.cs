@@ -9,10 +9,12 @@ namespace KommoOdooIntegrationWebAPI.Controllers
     public class IntegrationController : ControllerBase
     {
         private readonly ISyncService _syncService;
+        private readonly IKommoService _kommoService;
 
-        public IntegrationController(ISyncService syncService)
+        public IntegrationController(ISyncService syncService, IKommoService kommoService)
         {
             _syncService = syncService;
+            _kommoService = kommoService;
         }
 
 

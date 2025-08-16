@@ -17,9 +17,10 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
 
         public async Task KommoToOdooIntegrationAsync()
         {
-            var json = await _kommoService.GetLeadsAsync();
-
+            // 1️⃣ Kommo-dan lead-ləri çəkirik
+            var json = await _kommoService.GetLeadsAsync("contacts,companies");
             using var doc = JsonDocument.Parse(json);
+
             if (!doc.RootElement.TryGetProperty("_embedded", out var embedded) ||
                 !embedded.TryGetProperty("leads", out var leadsElement))
             {
@@ -29,49 +30,89 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
 
             foreach (var lead in leadsElement.EnumerateArray())
             {
-                string name = lead.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : "No name";
+                string leadName = lead.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : "No name";
+                decimal? revenue = lead.TryGetProperty("price", out var priceProp) && priceProp.ValueKind == JsonValueKind.Number
+                                   ? priceProp.GetDecimal()
+                                   : (decimal?)null;
+                string description = $"View full lead in Kommo: https://memizademinur.kommo.com/leads/detail/{lead.GetProperty("id").GetInt64()}";
 
-                string email = null;
-                string phone = null;
+                string companyName = null;
+                string contactName = null;
+                string contactEmail = null;
+                string contactPhone = null;
 
+                // 2️⃣ Əgər lead-in contact-ları varsa, hər contact üçün məlumatları ayrıca al
                 if (lead.TryGetProperty("_embedded", out var leadEmbedded) &&
-                    leadEmbedded.TryGetProperty("contacts", out var contacts) &&
-                    contacts.ValueKind == JsonValueKind.Array &&
-                    contacts.GetArrayLength() > 0)
+                    leadEmbedded.TryGetProperty("contacts", out var contactsArray) &&
+                    contactsArray.ValueKind == JsonValueKind.Array)
                 {
-                    var firstContact = contacts[0];
-
-                    if (firstContact.TryGetProperty("custom_fields_values", out var cfv) &&
-                        cfv.ValueKind == JsonValueKind.Array)
+                    foreach (var contactRef in contactsArray.EnumerateArray())
                     {
-                        foreach (var cf in cfv.EnumerateArray())
+                        if (contactRef.TryGetProperty("id", out var contactIdProp))
                         {
-                            string fieldCode = cf.TryGetProperty("field_code", out var fc) ? fc.GetString() : null;
-                            string val = cf.TryGetProperty("values", out var values) &&
-                                         values.ValueKind == JsonValueKind.Array &&
-                                         values.GetArrayLength() > 0
-                                         ? values[0].GetProperty("value").GetString()
-                                         : null;
+                            long contactId = contactIdProp.GetInt64();
 
-                            if (fieldCode == "EMAIL") email = val;
-                            else if (fieldCode == "PHONE") phone = val;
+                            // Contact-un tam məlumatını al
+                            var contactJson = await _kommoService.GetContactByIdAsync(contactId);
+                            using var contactDoc = JsonDocument.Parse(contactJson);
+                            var contactRoot = contactDoc.RootElement;
+
+                            contactName = contactRoot.TryGetProperty("name", out var cName) ? cName.GetString() : null;
+
+                            if (contactRoot.TryGetProperty("custom_fields_values", out var cfv) &&
+                                cfv.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var cf in cfv.EnumerateArray())
+                                {
+                                    string fieldCode = cf.TryGetProperty("field_code", out var fc) ? fc.GetString() : null;
+                                    string val = cf.TryGetProperty("values", out var values) &&
+                                                 values.ValueKind == JsonValueKind.Array &&
+                                                 values.GetArrayLength() > 0
+                                                 ? values[0].GetProperty("value").GetString()
+                                                 : null;
+
+                                    if (fieldCode == "EMAIL" && !string.IsNullOrWhiteSpace(val))
+                                        contactEmail = val;
+                                    if (fieldCode == "PHONE" && !string.IsNullOrWhiteSpace(val))
+                                        contactPhone = val;
+                                }
+                            }
                         }
                     }
                 }
 
-                var contactId = await _odooService.CreateAsync("res.partner", new
+                // 3️⃣ Əgər varsa şirkət məlumatı
+                if (leadEmbedded.TryGetProperty("companies", out var companiesArray) &&
+                    companiesArray.ValueKind == JsonValueKind.Array &&
+                    companiesArray.GetArrayLength() > 0)
                 {
-                    name = name,
-                    email = email,
-                    phone = phone
+                    var company = companiesArray[0];
+                    companyName = company.TryGetProperty("name", out var cName) ? cName.GetString() : null;
+
+                    // Əgər contact email/phone boşdursa, şirkətdən götür
+                    if (string.IsNullOrWhiteSpace(contactEmail))
+                        contactEmail = company.TryGetProperty("email", out var cEmail) ? cEmail.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(contactPhone))
+                        contactPhone = company.TryGetProperty("phone", out var cPhone) ? cPhone.GetString() : null;
+                }
+
+                // 4️⃣ Odoo-da contact yarat
+                var contactIdOdoo = await _odooService.CreateAsync("res.partner", new
+                {
+                    name = contactName ?? leadName,
+                    email = contactEmail,
+                    phone = contactPhone,
+                    company_name = companyName
                 });
+                int contactIdInt = Convert.ToInt32(contactIdOdoo);
 
-                int contactIdInt = Convert.ToInt32(contactId);
-
+                // 5️⃣ Odoo-da lead yarat və contact-a bağla
                 await _odooService.CreateAsync("crm.lead", new
                 {
-                    name = name,
-                    partner_id =  contactIdInt
+                    name = leadName,
+                    partner_id = contactIdInt,
+                    expected_revenue = revenue,
+                    description = description
                 });
             }
         }
@@ -79,63 +120,49 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
 
         public async Task OdooToKommoIntegrationAsync()
         {
-            var odooLeads = await _odooService.SearchReadAsync(
-                "res.partner",
-                new object[][] { },
-                new string[] { "name", "email", "phone" }
-            );
+            // Odoo-dan sadəcə leadin adını çəkmək
+            var fields = new string[] { "name" };
+            var jsonResult = await _odooService.SearchReadAsync("crm.lead", new object[][] { }, fields);
 
-            Console.WriteLine(odooLeads.ToString());
+            int createdCount = 0;
 
-            var leads = odooLeads.GetProperty("result").EnumerateArray();
-            foreach (var lead in leads)
+            foreach (var item in jsonResult.GetProperty("result").EnumerateArray())
             {
-                string name = lead.GetProperty("name").GetString();
-                string email = null;
-                if (lead.TryGetProperty("email_from", out var em))
-                {
-                    if (em.ValueKind == JsonValueKind.String)
-                        email = em.GetString();
-                }
+                var leadName = item.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String
+                    ? name.GetString()
+                    : "NoName";
 
-                string phone = null;
-                if (lead.TryGetProperty("phone", out var ph))
+                // Kommo-da lead yaratmaq üçün minimal payload
+                var leadPayload = new[]
                 {
-                    if (ph.ValueKind == JsonValueKind.String)
-                        phone = ph.GetString();
-                }
+            new
+            {
+                name = leadName,
+                _embedded = new { } // boş _embedded sahəsi tələb olunur
+            }
+        };
 
-                var contactDto = new ContactDTO
+                // POST request
+                var leadJsonString = await _kommoService.PostAsync("/api/v4/leads", leadPayload);
+
+                var leadJson = JsonDocument.Parse(leadJsonString);
+                if (leadJson.RootElement.TryGetProperty("id", out var leadId))
                 {
-                    Name = name,
-                    First_name = name?.Split(' ')[0] ?? name,
-                    Last_name = name?.Contains(' ') == true ? name.Split(' ')[1] : "",
-                    Custom_fields_values = new[]
-                    {
-                new CustomFieldValue
+                    createdCount++;
+                    Console.WriteLine($"Lead yaradıldı: {leadId.GetInt32()}");
+                }
+                else
                 {
-                    Field_code = "EMAIL",
-                    Values = new[] { new Value { value = email } }
-                },
-                new CustomFieldValue
-                {
-                    Field_code = "PHONE",
-                    Values = new[] { new Value { value = phone } }
+                    Console.WriteLine($"Lead yaradıla bilmədi: {leadJsonString}");
                 }
             }
-                };
 
-                var leadDto = new LeadDTO
-                {
-                    Name = name,
-                    _embedded = new EmbeddedContacts
-                    {
-                        Contacts = new[] { contactDto }
-                    }
-                };
-
-                await _kommoService.CreateLeadAsync(leadDto);
-            }
+            Console.WriteLine($"Bütün Odoo leadləri Kommo-da yaradıldı. Uğurla yaradılan lead sayı: {createdCount}");
         }
+
+
     }
+
 }
+
+

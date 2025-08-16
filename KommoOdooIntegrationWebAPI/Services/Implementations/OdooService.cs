@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using System.Text.Json;
 using KommoOdooIntegrationWebAPI.Configurations;
+using KommoOdooIntegrationWebAPI.Models.DTOs;
 using KommoOdooIntegrationWebAPI.Services.Interfaces;
 using Microsoft.Extensions.Options;
 
@@ -104,6 +105,36 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
             return response.GetProperty("result").GetInt32();
         }
 
+        public async Task<bool> UpdateAsync(string model, int id, object values)
+        {
+            if (_uid == 0)
+                await AuthenticateAsync();
+
+            var request = new
+            {
+                jsonrpc = "2.0",
+                method = "call",
+                @params = new
+                {
+                    service = "object",
+                    method = "execute_kw",
+                    args = new object[]
+                    {
+                    _odooConfiguration.Db,
+                    _uid,
+                    _odooConfiguration.Password,
+                    model,
+                    "write",
+                    new object[] { new int[] { id }, values }
+                    }
+                },
+                id = 4
+            };
+
+            var response = await SendRequestAsync(request);
+            return response.GetProperty("result").GetBoolean();
+        }
+
         private async Task<JsonElement> SendRequestAsync(object payload)
         {
             var json = JsonSerializer.Serialize(payload);
@@ -114,6 +145,6 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
 
             var body = await response.Content.ReadAsStringAsync();
             return JsonSerializer.Deserialize<JsonElement>(body);
-        } 
+        }
     }
 }
