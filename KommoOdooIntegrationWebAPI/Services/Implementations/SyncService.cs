@@ -17,6 +17,28 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
 
         public async Task KommoToOdooIntegrationAsync()
         {
+            // 1️⃣ Odoo-da mövcud lead-lərin description-larını çəkmək
+            var fields = new string[] { "id", "description" };
+            var jsonResult = await _odooService.SearchReadAsync("crm.lead", new object[][] { }, fields);
+
+            using var docw = JsonDocument.Parse(jsonResult.ToString());
+            HashSet<string> existingDescriptions = new HashSet<string>();
+
+            if (docw.RootElement.TryGetProperty("result", out var resultArray) && resultArray.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var lead in resultArray.EnumerateArray())
+                {
+                    string desc = lead.TryGetProperty("description", out var descProp) ? descProp.GetString() : null;
+                    if (!string.IsNullOrWhiteSpace(desc))
+                    {
+                        // <p> və </p> tag-larını çıxarırıq
+                        desc = desc.Replace("<p>", "").Replace("</p>", "").Trim();
+                        existingDescriptions.Add(desc);
+                    }
+                }
+            }
+
+            // 2️⃣ Kommo-dan lead-ləri çəkmək
             var json = await _kommoService.GetLeadsAsync("contacts,companies");
             using var doc = JsonDocument.Parse(json);
 
@@ -33,82 +55,29 @@ namespace KommoOdooIntegrationWebAPI.Services.Implementations
                 decimal? revenue = lead.TryGetProperty("price", out var priceProp) && priceProp.ValueKind == JsonValueKind.Number
                                    ? priceProp.GetDecimal()
                                    : (decimal?)null;
-                string description = $"View full lead in Kommo: https://memizademinur.kommo.com/leads/detail/{lead.GetProperty("id").GetInt64()}";
 
-                string companyName = null;
-                string contactName = null;
-                string contactEmail = null;
-                string contactPhone = null;
+                string description = $"https://memizademinur.kommo.com/leads/detail/{lead.GetProperty("id").GetInt64()}";
 
-                if (lead.TryGetProperty("_embedded", out var leadEmbedded) &&
-                    leadEmbedded.TryGetProperty("contacts", out var contactsArray) &&
-                    contactsArray.ValueKind == JsonValueKind.Array)
+                // 3️⃣ Əgər description artıq mövcuddursa, skip et
+                if (existingDescriptions.Contains(description))
                 {
-                    foreach (var contactRef in contactsArray.EnumerateArray())
-                    {
-                        if (contactRef.TryGetProperty("id", out var contactIdProp))
-                        {
-                            long contactId = contactIdProp.GetInt64();
-
-                            var contactJson = await _kommoService.GetContactByIdAsync(contactId);
-                            using var contactDoc = JsonDocument.Parse(contactJson);
-                            var contactRoot = contactDoc.RootElement;
-
-                            contactName = contactRoot.TryGetProperty("name", out var cName) ? cName.GetString() : null;
-
-                            if (contactRoot.TryGetProperty("custom_fields_values", out var cfv) &&
-                                cfv.ValueKind == JsonValueKind.Array)
-                            {
-                                foreach (var cf in cfv.EnumerateArray())
-                                {
-                                    string fieldCode = cf.TryGetProperty("field_code", out var fc) ? fc.GetString() : null;
-                                    string val = cf.TryGetProperty("values", out var values) &&
-                                                 values.ValueKind == JsonValueKind.Array &&
-                                                 values.GetArrayLength() > 0
-                                                 ? values[0].GetProperty("value").GetString()
-                                                 : null;
-
-                                    if (fieldCode == "EMAIL" && !string.IsNullOrWhiteSpace(val))
-                                        contactEmail = val;
-                                    if (fieldCode == "PHONE" && !string.IsNullOrWhiteSpace(val))
-                                        contactPhone = val;
-                                }
-                            }
-                        }
-                    }
+                    Console.WriteLine($"Lead '{leadName}' artıq Odoo-da mövcuddur, yaradılmır.");
+                    continue;
                 }
 
-                if (leadEmbedded.TryGetProperty("companies", out var companiesArray) &&
-                    companiesArray.ValueKind == JsonValueKind.Array &&
-                    companiesArray.GetArrayLength() > 0)
-                {
-                    var company = companiesArray[0];
-                    companyName = company.TryGetProperty("name", out var cName) ? cName.GetString() : null;
-
-                    if (string.IsNullOrWhiteSpace(contactEmail))
-                        contactEmail = company.TryGetProperty("email", out var cEmail) ? cEmail.GetString() : null;
-                    if (string.IsNullOrWhiteSpace(contactPhone))
-                        contactPhone = company.TryGetProperty("phone", out var cPhone) ? cPhone.GetString() : null;
-                }
-
-                var contactIdOdoo = await _odooService.CreateAsync("res.partner", new
-                {
-                    name = contactName ?? leadName,
-                    email = contactEmail,
-                    phone = contactPhone,
-                    company_name = companyName
-                });
-                int contactIdInt = Convert.ToInt32(contactIdOdoo);
-
+                // 4️⃣ Lead yarat
                 await _odooService.CreateAsync("crm.lead", new
                 {
                     name = leadName,
-                    partner_id = contactIdInt,
                     expected_revenue = revenue,
                     description = description
                 });
+
+                // Yeni yaratdığımız description əlavə et ki, növbəti loop-da da yoxlansın
+                existingDescriptions.Add(description);
             }
         }
+
 
 
         public async Task OdooToKommoIntegrationAsync()
